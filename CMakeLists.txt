@@ -27,6 +27,10 @@ add_executable(ascend_c_addn
     ascend_c_addn.asc
 )
 
+add_executable(ascend_c_addn_failing
+    ascend_c_addn_failing.asc
+)
+
 target_link_libraries(ascend_c_addn PRIVATE
     tiling_api
     register
@@ -45,13 +49,22 @@ elseif(ENABLE_MS_SANITIZER)
         --cce-fatobj-link
         --cce-enable-sanitizer
     )
+    target_link_options(ascend_c_addn_failing PRIVATE
+        --cce-fatobj-link
+        --cce-enable-sanitizer
+    )
 elseif(ENABLE_SIMULATOR)
     list(APPEND compile_options -O2 -g)
     target_link_libraries(ascend_c_addn PRIVATE
         runtime_camodel
         npu_drv
     )
+    target_link_libraries(ascend_c_addn_failing PRIVATE
+        runtime_camodel
+        npu_drv
+    )
     target_link_directories(ascend_c_addn PUBLIC "${ASCEND_HOME_PATH}/tools/simulator/${SOC_VERSION}/lib")
+    target_link_directories(ascend_c_addn_failing PUBLIC "${ASCEND_HOME_PATH}/tools/simulator/${SOC_VERSION}/lib")
 elseif(ENABLE_ON_BOARD)
     list(APPEND compile_options -O2 -g)
 else()
@@ -59,6 +72,10 @@ else()
 endif()
 
 target_compile_options(ascend_c_addn PRIVATE
+    $<$<COMPILE_LANGUAGE:ASC>:--npu-arch=dav-2201>
+    ${compile_options}
+)
+target_compile_options(ascend_c_addn_failing PRIVATE
     $<$<COMPILE_LANGUAGE:ASC>:--npu-arch=dav-2201>
     ${compile_options}
 )
