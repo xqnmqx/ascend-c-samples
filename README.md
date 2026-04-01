@@ -1,3 +1,7 @@
+# AscendC samples
+
+[AscendC devkit link](https://gitcode.com/cann/asc-devkit/blob/master/examples/01_simd_cpp_api/00_introduction/01_add/basic_api_memory_allocator_add/add.asc)
+
 # ascend_c_addn算子直调样例
 本样例基于addn算子工程，介绍了单算子<<<>>>直调方法。样例支持两个张量的动态相加运算，使用ListTensorDesc结构灵活处理多个输入参数，实现高效、可扩展的核函数调用。
 
