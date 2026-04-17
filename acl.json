@@ -1,6 +1,6 @@
 {
 	"dump": {
-		"dump_path": "/tmp/acl/",
-		"dump_scene": "aic_err_brief_dump"
+		"dump_path": "./dumps/",
+		"dump_scene": "aic_err_detail_dump"
 	}
 }
