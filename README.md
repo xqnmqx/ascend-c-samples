@@ -2,49 +2,49 @@
 
 [AscendC devkit link](https://gitcode.com/cann/asc-devkit/blob/master/examples/01_simd_cpp_api/00_introduction/01_add/basic_api_memory_allocator_add/add.asc)
 
-# ascend_c_addn算子直调样例
-本样例基于addn算子工程，介绍了单算子<<<>>>直调方法。样例支持两个张量的动态相加运算，使用ListTensorDesc结构灵活处理多个输入参数，实现高效、可扩展的核函数调用。
+# ascend_c_addn Operator direct dispatch example
+This example is based on the addn operator project and describes how to directly debug a single operator <<<>>>. This example supports dynamic addition of two tensors. The ListTensorDesc structure is used to flexibly process multiple input parameters, implementing efficient and scalable kernel function calls.
 
-## 支持的产品
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品
+## Supported Products
+- Atlas A3 Training series products / Atlas A3 inference series products
+- Atlas A2 Training series products/Atlas A2 inference series products
 
-## 基于一站式算子开发平台进行算子开发
-基于一站式算子开发平台快速完成算子创建、开发、异常检测、性能调优 \
-指导文档：**[https://gitcode.com/org/cann/discussions/54](https://gitcode.com/org/cann/discussions/54)**
+## Operator development based on a one-stop operator development platform.
+Quickly complete operator creation, development, exception detection, and performance optimization based on a one-stop operator development platform.
+Instruction Manual：**[https://gitcode.com/org/cann/discussions/54](https://gitcode.com/org/cann/discussions/54)**
 
-## 编译运行
+## Compile and run
 
-如何快速编译算子
-| 模式 | 命令 | 用途 |
+How to quickly compile operators
+| Mode | Command | Purpose |
 |------|------|------|
-| 普通编译 | `bash build.sh` | 日常开发验证 |
-| 异常检测 | `bash build.sh --mssanitizer` | 问题检测 |
-| 上板调优 | `bash build.sh --onboard` | 真实环境性能分析 |
-| 仿真调优 | `bash build.sh --simulator` | 指令级详细分析 |
+| Regular Compilation | `bash build.sh` | Daily Development Verification |
+| anomaly detection | `bash build.sh --mssanitizer` | Problem Detection |
+| Upper board tuning | `bash build.sh --onboard` | Performance analysis in real environments |
+| Simulation Optimization | `bash build.sh --simulator` | Instruction-level detailed analysis |
 
-## 算子描述
-- 算子功能：  
+## Operator Description
+- Operator Functionality：  
 
-  此算子实现了两个数据相加，返回相加结果的功能，其中核函数的输入参数为动态输入，动态输入参数包含两个入参，x和y。对应的数学表达式为：  
+This operator implements the function of adding two pieces of data and returning the result of the addition. The input parameters of the kernel function are dynamic inputs, which include two input parameters: x and y. The corresponding mathematical expression is as follows：  
   ```
   z = x + y
   ```
-- 算子规格：
+- Operator Specifications：
   <table>
   </tr>
-  <tr><td rowspan="3" align="center">算子输入</td><td align="center">name</td><td align="center">shape</td><td align="center">data type</td><td align="center">format</td></tr>
-  <tr><td align="center">x（动态输入参数srcList[0]）</td><td align="center">8 * 2048</td><td align="center">float</td><td align="center">ND</td></tr>
-  <tr><td align="center">y（动态输入参数srcList[1]）</td><td align="center">8 * 2048</td><td align="center">float</td><td align="center">ND</td></tr>
+  <tr><td rowspan="3" align="center">Operator Input</td><td align="center">name</td><td align="center">shape</td><td align="center">data type</td><td align="center">format</td></tr>
+  <tr><td align="center">x（Dynamic Input Parameters srcList[0]）</td><td align="center">8 * 2048</td><td align="center">float</td><td align="center">ND</td></tr>
+  <tr><td align="center">y（Dynamic Input Parameters srcList[1]）</td><td align="center">8 * 2048</td><td align="center">float</td><td align="center">ND</td></tr>
   </tr>
   </tr>
-  <tr><td rowspan="1" align="center">算子输出</td><td align="center">z</td><td align="center">8 * 2048</td><td align="center">float</td><td align="center">ND</td></tr>
+  <tr><td rowspan="1" align="center">Operator output</td><td align="center">z</td><td align="center">8 * 2048</td><td align="center">float</td><td align="center">ND</td></tr>
   </tr>
   </table>
-- 算子实现：  
+- operator implementation：  
 
-  动态输入特性是指，核函数的入参采用ListTensorDesc的结构存储输入数据信息。  
-  构造TensorList数据结构，示例如下。
+  The dynamic input feature indicates that the input data information of the kernel function is stored in the ListTensorDesc structure.
+  The following is an example of constructing the TensorList data structure.
   ```cpp
   constexpr uint32_t SHAPE_DIM = 2;
     struct TensorDesc {
@@ -60,13 +60,13 @@
       uintptr_t dataPtr[TENSOR_DESC_NUM];
     } inputDesc;
   ```
-  将申请分配的Tensor入参组合成ListTensorDesc的数据结构，示例如下。
+  The input parameters of the allocated tensor are combined into the data structure of ListTensorDesc. The following is an example:
   ```cpp
   inputDesc = {(1 + (1 + SHAPE_DIM) * TENSOR_DESC_NUM) * sizeof(uint64_t),
               {xDesc, yDesc},
               {(uintptr_t)xDevice, (uintptr_t)yDevice}};
   ``` 
-  按照传入的数据格式，解析出对应的各入参，示例如下。
+  The corresponding input parameters are parsed based on the input data format. The following is an example:
 
   ```cpp
   uint64_t buf[SHAPE_DIM] = {0};
@@ -77,5 +77,5 @@
   __gm__ uint8_t *x = listTensorDesc.GetDataPtr<__gm__ uint8_t>(0);
   __gm__ uint8_t *y = listTensorDesc.GetDataPtr<__gm__ uint8_t>(1);
   ```
-  - 调用实现  
-    使用内核调用符<<<>>>调用核函数。
+  - Invocation implementation  
+    Use the kernel invocation operator <<<>>> to invoke a kernel function.
