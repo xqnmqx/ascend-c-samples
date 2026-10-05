@@ -1,6 +1,6 @@
 /*
- * Counter模式单目算子示例（Abs）// Unary Operator Examples
- * 功能：对输入tensor取绝对值 // Function: Takes the absolute value of the input tensor.
+ * Unary Operator Examples
+ * Function: Takes the absolute value of the input tensor.
  */
 
 #include "kernel_operator.h"
@@ -9,8 +9,8 @@ using namespace AscendC;
 #include <iostream>
 #include "acl/acl.h"
 
-constexpr int32_t TOTAL_LENGTH = 2048; // 总数据长度 // Total data length
-constexpr int32_t TILE_LENGTH  = 128;  // 每次处理的元素数 // Number of elements processed each time
+constexpr int32_t TOTAL_LENGTH = 2048; // Total data length
+constexpr int32_t TILE_LENGTH  = 128;  // Number of elements processed each time
 
 #define ACL_ERROR_NONE 0
 
@@ -27,17 +27,17 @@ public:
     __aicore__ inline KernelAbsCounter() {}
 
     __aicore__ inline void Init(GM_ADDR x, GM_ADDR z) {
-        // 设置全局buffer // Set global buffer
+        // Set global buffer
         xGm.SetGlobalBuffer((__gm__ half*)x, TOTAL_LENGTH);
         zGm.SetGlobalBuffer((__gm__ half*)z, TOTAL_LENGTH);
 
-        // 初始化队列 // Initialize the queue
+        // Initialize the queue
         pipe.InitBuffer(inQueueX, 1, TILE_LENGTH * sizeof(half));
         pipe.InitBuffer(outQueueZ, 1, TILE_LENGTH * sizeof(half));
     }
 
     __aicore__ inline void Process() {
-        // 循环处理数据 // Process data in a loop.
+        // Process data in a loop.
         for (int32_t i = 0; i < TOTAL_LENGTH / TILE_LENGTH; i++) {
             CopyIn(i);
             Compute(i);
@@ -56,11 +56,11 @@ private:
         LocalTensor<half> xLocal = inQueueX.DeQue<half>();
         LocalTensor<half> zLocal = outQueueZ.AllocTensor<half>();
 
-        // 使用Counter模式设置mask // Set mask using Counter mode
+        // Set mask using Counter mode
         SetMaskCount();
         SetVectorMask<half, MaskMode::COUNTER>(TILE_LENGTH);
 
-        // 单目算子：取绝对值（正确的三参版本） // Unary operator: Absolute value (correct three-parameter version)
+        // Unary operator: Absolute value (correct three-parameter version)
         Abs(zLocal, xLocal, TILE_LENGTH + 1);
         SetMaskNorm();
         ResetMask();
@@ -87,17 +87,17 @@ private:
     GlobalTensor<half> xGm, zGm;
 };
 
-// 核函数入口 // Kernel Function Entry Point
+// Kernel Function Entry Point
 extern "C" __global__ __aicore__ void abs_counter(GM_ADDR x, GM_ADDR z) {
     KernelAbsCounter op;
     op.Init(x, z);
     op.Process();
 }
 
-// 调用接口 // Invoke the interface
+// Invoke the interface
 void abs_counter_do(uint32_t blockDim, void* l2ctrl, void* stream,
                     uint8_t* x, uint8_t* z) {
-    abs_counter<<<blockDim, l2ctrl, stream>>>(x, z);  // ✅ 正确 // Correct
+    abs_counter<<<blockDim, l2ctrl, stream>>>(x, z);  // Correct
 }
 
 
@@ -124,48 +124,48 @@ int32_t main(int32_t argc, char *argv[])
     size_t inputByteSize = 8 * 2048 * sizeof(int16_t);
     size_t outputByteSize = 8 * 2048 * sizeof(int16_t);
     uint32_t blockDim = 8;
-    // AscendCL初始化
+    // AscendCL Init
     CHECK_ACL(aclInit(nullptr));
-    // 运行管理资源申请
+    // Runtime resource allocation management
     aclrtContext context;
     int32_t deviceId = 0;
     CHECK_ACL(aclrtSetDevice(deviceId));
     CHECK_ACL(aclrtCreateContext(&context, deviceId));
     aclrtStream stream = nullptr;
     CHECK_ACL(aclrtCreateStream(&stream));
-    // 分配Host内存
+    // Allocate Host memory
     int16_t *xHost = nullptr;
     int16_t *yHost = nullptr;
     int16_t *zHost = nullptr;
     CHECK_ACL(aclrtMallocHost((void**)(&xHost), inputByteSize));
     CHECK_ACL(aclrtMallocHost((void**)(&yHost), inputByteSize));
     CHECK_ACL(aclrtMallocHost((void**)(&zHost), outputByteSize));
-    // 分配Device内存
+    // Allocate device memory
     uint8_t *xDevice = nullptr;
     uint8_t *yDevice = nullptr;
     uint8_t *zDevice = nullptr;
     CHECK_ACL(aclrtMalloc((void**)&xDevice, inputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
     CHECK_ACL(aclrtMalloc((void**)&yDevice, inputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
     CHECK_ACL(aclrtMalloc((void**)&zDevice, outputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
-    // Host内存初始化
+    // Host memory initialization
     prepareTensor(xHost, inputByteSize);
     prepareTensor(yHost, inputByteSize);
     CHECK_ACL(aclrtMemcpy(xDevice, inputByteSize, xHost, inputByteSize, ACL_MEMCPY_HOST_TO_DEVICE));
     CHECK_ACL(aclrtMemcpy(yDevice, inputByteSize, yHost, inputByteSize, ACL_MEMCPY_HOST_TO_DEVICE));
-    // 用内核调用符<<<>>>调用核函数完成指定的运算,add_custom_do中封装了<<<>>>调用
+    // Use the kernel call operator <<<>>> to invoke the kernel function
     abs_counter_do(blockDim, nullptr, stream, xDevice, zDevice);
     CHECK_ACL(aclrtSynchronizeStream(stream));
-    // 将Device上的运算结果拷贝回Host
+    // Copying the computation result from the device to the host
     CHECK_ACL(aclrtMemcpy(zHost, outputByteSize, zDevice, outputByteSize, ACL_MEMCPY_DEVICE_TO_HOST));
-    printTensor(zHost, 2 * 8 * 2); // 显示2行
-    // 释放申请的资源
+    printTensor(zHost, 2 * 8 * 2); 
+    // Releasing the requested resources
     CHECK_ACL(aclrtFree(xDevice));
     CHECK_ACL(aclrtFree(yDevice));
     CHECK_ACL(aclrtFree(zDevice));
     CHECK_ACL(aclrtFreeHost(xHost));
     CHECK_ACL(aclrtFreeHost(yHost));
     CHECK_ACL(aclrtFreeHost(zHost));
-    // AscendCL去初始化
+    // AscendCL Deinitialization
     CHECK_ACL(aclrtDestroyStream(stream));
     CHECK_ACL(aclrtDestroyContext(context));
     CHECK_ACL(aclrtResetDevice(deviceId));
