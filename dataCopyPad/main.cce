@@ -1,0 +1,174 @@
+/*
+ * Counter模式单目算子示例（Abs）// Unary Operator Examples
+ * 功能：对输入tensor取绝对值 // Function: Takes the absolute value of the input tensor.
+ */
+
+#include "kernel_operator.h"
+using namespace AscendC;
+
+#include <iostream>
+#include "acl/acl.h"
+
+constexpr int32_t TOTAL_LENGTH = 2048; // 总数据长度 // Total data length
+constexpr int32_t TILE_LENGTH  = 128;  // 每次处理的元素数 // Number of elements processed each time
+
+#define ACL_ERROR_NONE 0
+
+#define CHECK_ACL(x)                                                        \
+    do {                                                                    \
+        aclError __ret = x;                                                 \
+        if (__ret != ACL_ERROR_NONE) {                                      \
+            printf("%s: %d aclError %d\n", __FILE__, __LINE__, __ret);      \
+        }                                                                   \
+    } while (0)
+
+class KernelAbsCounter {
+public:
+    __aicore__ inline KernelAbsCounter() {}
+
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR z) {
+        // 设置全局buffer // Set global buffer
+        xGm.SetGlobalBuffer((__gm__ half*)x, TOTAL_LENGTH);
+        zGm.SetGlobalBuffer((__gm__ half*)z, TOTAL_LENGTH);
+
+        // 初始化队列 // Initialize the queue
+        pipe.InitBuffer(inQueueX, 1, TILE_LENGTH * sizeof(half));
+        pipe.InitBuffer(outQueueZ, 1, TILE_LENGTH * sizeof(half));
+    }
+
+    __aicore__ inline void Process() {
+        // 循环处理数据 // Process data in a loop.
+        for (int32_t i = 0; i < TOTAL_LENGTH / TILE_LENGTH; i++) {
+            CopyIn(i);
+            Compute(i);
+            CopyOut(i);
+        }
+    }
+
+private:
+    __aicore__ inline void CopyIn(int32_t progress) {
+        LocalTensor<half> xLocal = inQueueX.AllocTensor<half>();
+        DataCopy(xLocal, xGm[progress * TILE_LENGTH], TILE_LENGTH);
+        inQueueX.EnQue(xLocal);
+    }
+
+    __aicore__ inline void Compute(int32_t progress) {
+        LocalTensor<half> xLocal = inQueueX.DeQue<half>();
+        LocalTensor<half> zLocal = outQueueZ.AllocTensor<half>();
+
+        // 使用Counter模式设置mask // Set mask using Counter mode
+        SetMaskCount();
+        SetVectorMask<half, MaskMode::COUNTER>(TILE_LENGTH);
+
+        // 单目算子：取绝对值（正确的三参版本） // Unary operator: Absolute value (correct three-parameter version)
+        Abs(zLocal, xLocal, TILE_LENGTH + 1);
+        SetMaskNorm();
+        ResetMask();
+
+        outQueueZ.EnQue(zLocal);
+        inQueueX.FreeTensor(xLocal);
+    }
+
+    __aicore__ inline void CopyOut(int32_t progress) {
+        LocalTensor<half> zLocal = outQueueZ.DeQue<half>();
+        DataCopyParams dataCopyParams{};
+        dataCopyParams.blockCount = 1;
+        dataCopyParams.blockLen = TILE_LENGTH * 2 * sizeof(int16_t);
+        dataCopyParams.srcStride = 1;
+        dataCopyParams.dstStride = 1;
+        DataCopyPad(zGm[progress * TILE_LENGTH], zLocal, dataCopyParams);
+        outQueueZ.FreeTensor(zLocal);
+    }
+
+private:
+    TPipe pipe;
+    TQue<QuePosition::VECIN, 1> inQueueX;
+    TQue<QuePosition::VECOUT, 1> outQueueZ;
+    GlobalTensor<half> xGm, zGm;
+};
+
+// 核函数入口 // Kernel Function Entry Point
+extern "C" __global__ __aicore__ void abs_counter(GM_ADDR x, GM_ADDR z) {
+    KernelAbsCounter op;
+    op.Init(x, z);
+    op.Process();
+}
+
+// 调用接口 // Invoke the interface
+void abs_counter_do(uint32_t blockDim, void* l2ctrl, void* stream,
+                    uint8_t* x, uint8_t* z) {
+    abs_counter<<<blockDim, l2ctrl, stream>>>(x, z);  // ✅ 正确 // Correct
+}
+
+
+void prepareTensor(int16_t *ptr, size_t size)
+{
+    for (size_t i = 0; i < size / sizeof(int16_t); i++) {
+        ptr[i] = i;
+    }
+}
+
+void printTensor(int16_t *ptr, size_t size)
+{
+    size_t colNum = 8;
+    for (size_t i = 0; i < size / colNum / sizeof(int16_t); i++) {
+        for (size_t j = 0; j < colNum; j++) {
+            printf("%hu ", ptr[colNum * i + j]);
+        }
+        printf("\n");
+    }
+}
+
+int32_t main(int32_t argc, char *argv[])
+{
+    size_t inputByteSize = 8 * 2048 * sizeof(int16_t);
+    size_t outputByteSize = 8 * 2048 * sizeof(int16_t);
+    uint32_t blockDim = 8;
+    // AscendCL初始化
+    CHECK_ACL(aclInit(nullptr));
+    // 运行管理资源申请
+    aclrtContext context;
+    int32_t deviceId = 0;
+    CHECK_ACL(aclrtSetDevice(deviceId));
+    CHECK_ACL(aclrtCreateContext(&context, deviceId));
+    aclrtStream stream = nullptr;
+    CHECK_ACL(aclrtCreateStream(&stream));
+    // 分配Host内存
+    int16_t *xHost = nullptr;
+    int16_t *yHost = nullptr;
+    int16_t *zHost = nullptr;
+    CHECK_ACL(aclrtMallocHost((void**)(&xHost), inputByteSize));
+    CHECK_ACL(aclrtMallocHost((void**)(&yHost), inputByteSize));
+    CHECK_ACL(aclrtMallocHost((void**)(&zHost), outputByteSize));
+    // 分配Device内存
+    uint8_t *xDevice = nullptr;
+    uint8_t *yDevice = nullptr;
+    uint8_t *zDevice = nullptr;
+    CHECK_ACL(aclrtMalloc((void**)&xDevice, inputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
+    CHECK_ACL(aclrtMalloc((void**)&yDevice, inputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
+    CHECK_ACL(aclrtMalloc((void**)&zDevice, outputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
+    // Host内存初始化
+    prepareTensor(xHost, inputByteSize);
+    prepareTensor(yHost, inputByteSize);
+    CHECK_ACL(aclrtMemcpy(xDevice, inputByteSize, xHost, inputByteSize, ACL_MEMCPY_HOST_TO_DEVICE));
+    CHECK_ACL(aclrtMemcpy(yDevice, inputByteSize, yHost, inputByteSize, ACL_MEMCPY_HOST_TO_DEVICE));
+    // 用内核调用符<<<>>>调用核函数完成指定的运算,add_custom_do中封装了<<<>>>调用
+    abs_counter_do(blockDim, nullptr, stream, xDevice, zDevice);
+    CHECK_ACL(aclrtSynchronizeStream(stream));
+    // 将Device上的运算结果拷贝回Host
+    CHECK_ACL(aclrtMemcpy(zHost, outputByteSize, zDevice, outputByteSize, ACL_MEMCPY_DEVICE_TO_HOST));
+    printTensor(zHost, 2 * 8 * 2); // 显示2行
+    // 释放申请的资源
+    CHECK_ACL(aclrtFree(xDevice));
+    CHECK_ACL(aclrtFree(yDevice));
+    CHECK_ACL(aclrtFree(zDevice));
+    CHECK_ACL(aclrtFreeHost(xHost));
+    CHECK_ACL(aclrtFreeHost(yHost));
+    CHECK_ACL(aclrtFreeHost(zHost));
+    // AscendCL去初始化
+    CHECK_ACL(aclrtDestroyStream(stream));
+    CHECK_ACL(aclrtDestroyContext(context));
+    CHECK_ACL(aclrtResetDevice(deviceId));
+    CHECK_ACL(aclFinalize());
+    return 0;
+}
