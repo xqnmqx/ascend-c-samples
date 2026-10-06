@@ -124,8 +124,10 @@ int32_t main(int32_t argc, char *argv[])
     size_t inputByteSize = 8 * 2048 * sizeof(int16_t);
     size_t outputByteSize = 8 * 2048 * sizeof(int16_t);
     uint32_t blockDim = 8;
+
     // AscendCL Init
     CHECK_ACL(aclInit(nullptr));
+
     // Runtime resource allocation management
     aclrtContext context;
     int32_t deviceId = 0;
@@ -133,6 +135,7 @@ int32_t main(int32_t argc, char *argv[])
     CHECK_ACL(aclrtCreateContext(&context, deviceId));
     aclrtStream stream = nullptr;
     CHECK_ACL(aclrtCreateStream(&stream));
+
     // Allocate Host memory
     int16_t *xHost = nullptr;
     int16_t *yHost = nullptr;
@@ -140,6 +143,7 @@ int32_t main(int32_t argc, char *argv[])
     CHECK_ACL(aclrtMallocHost((void**)(&xHost), inputByteSize));
     CHECK_ACL(aclrtMallocHost((void**)(&yHost), inputByteSize));
     CHECK_ACL(aclrtMallocHost((void**)(&zHost), outputByteSize));
+
     // Allocate device memory
     uint8_t *xDevice = nullptr;
     uint8_t *yDevice = nullptr;
@@ -147,17 +151,21 @@ int32_t main(int32_t argc, char *argv[])
     CHECK_ACL(aclrtMalloc((void**)&xDevice, inputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
     CHECK_ACL(aclrtMalloc((void**)&yDevice, inputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
     CHECK_ACL(aclrtMalloc((void**)&zDevice, outputByteSize, ACL_MEM_MALLOC_HUGE_FIRST));
+
     // Host memory initialization
     prepareTensor(xHost, inputByteSize);
     prepareTensor(yHost, inputByteSize);
     CHECK_ACL(aclrtMemcpy(xDevice, inputByteSize, xHost, inputByteSize, ACL_MEMCPY_HOST_TO_DEVICE));
     CHECK_ACL(aclrtMemcpy(yDevice, inputByteSize, yHost, inputByteSize, ACL_MEMCPY_HOST_TO_DEVICE));
+
     // Use the kernel call operator <<<>>> to invoke the kernel function
     abs_counter_do(blockDim, nullptr, stream, xDevice, zDevice);
     CHECK_ACL(aclrtSynchronizeStream(stream));
+
     // Copying the computation result from the device to the host
     CHECK_ACL(aclrtMemcpy(zHost, outputByteSize, zDevice, outputByteSize, ACL_MEMCPY_DEVICE_TO_HOST));
     printTensor(zHost, 2 * 8 * 2); 
+
     // Releasing the requested resources
     CHECK_ACL(aclrtFree(xDevice));
     CHECK_ACL(aclrtFree(yDevice));
@@ -165,6 +173,7 @@ int32_t main(int32_t argc, char *argv[])
     CHECK_ACL(aclrtFreeHost(xHost));
     CHECK_ACL(aclrtFreeHost(yHost));
     CHECK_ACL(aclrtFreeHost(zHost));
+
     // AscendCL Deinitialization
     CHECK_ACL(aclrtDestroyStream(stream));
     CHECK_ACL(aclrtDestroyContext(context));
